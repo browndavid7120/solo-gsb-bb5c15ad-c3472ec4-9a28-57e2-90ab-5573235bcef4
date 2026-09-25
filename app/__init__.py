@@ -8,6 +8,7 @@ from flask import Flask, jsonify, render_template, request
 
 from mailtrace.parsing import (
     analyze_auth_results,
+    analyze_from_alignment,
     analyze_headers,
     analyze_trust_boundary,
     audit_dkim_coverage,
@@ -19,12 +20,14 @@ from mailtrace.parsing import (
 )
 from mailtrace.parsing.sample import (
     SAMPLE_HEADERS,
+    SAMPLE_HEADERS_ALIGN,
     SAMPLE_HEADERS_ARC,
     SAMPLE_HEADERS_AUTHRES,
     SAMPLE_HEADERS_B,
     SAMPLE_HEADERS_BATCH,
     SAMPLE_HEADERS_DKIM,
     SAMPLE_HEADERS_TRUST,
+    SAMPLE_ORG_DOMAIN,
     SAMPLE_TRUSTED_HOSTS,
 )
 
@@ -56,6 +59,8 @@ def create_app() -> Flask:
             "sample_trust": SAMPLE_HEADERS_TRUST,
             "sample_trusted_hosts": SAMPLE_TRUSTED_HOSTS,
             "sample_authres": SAMPLE_HEADERS_AUTHRES,
+            "sample_align": SAMPLE_HEADERS_ALIGN,
+            "sample_org_domain": SAMPLE_ORG_DOMAIN,
             "max_input_kb": max_input_kb,
         }
         context.update(extra)
@@ -154,6 +159,17 @@ def create_app() -> Flask:
             }
         return analyze_auth_results(raw_headers, trusted_hosts)
 
+    def _do_from_alignment(raw_headers: str, trusted_hosts, org_domain, mode) -> dict:
+        error = _check_size(raw_headers)
+        if error:
+            return {"error": error}
+        if not raw_headers.strip():
+            return {
+                "error": "请先粘贴邮件原始头部"
+                "（包含 From、Authentication-Results 与 Received 字段）"
+            }
+        return analyze_from_alignment(raw_headers, trusted_hosts, org_domain, mode)
+
     @app.post("/analyze")
     def analyze_form():
         raw_headers = request.form.get("headers_a", "") or request.form.get("headers", "")
@@ -228,6 +244,21 @@ def create_app() -> Flask:
             headers_authres=raw_headers,
             trusted_hosts_authres_text=trusted_hosts,
             authres=authres,
+        )
+
+    @app.post("/from-alignment")
+    def from_alignment_form():
+        raw_headers = request.form.get("headers_align", "")
+        trusted_hosts = request.form.get("trusted_hosts_align", "")
+        org_domain = request.form.get("org_domain", "")
+        mode = request.form.get("align_mode", "strict")
+        align = _do_from_alignment(raw_headers, trusted_hosts, org_domain, mode)
+        return render_index(
+            headers_align=raw_headers,
+            trusted_hosts_align_text=trusted_hosts,
+            org_domain_text=org_domain,
+            align_mode=mode,
+            align=align,
         )
 
     @app.post("/api/analyze")
@@ -372,6 +403,43 @@ def create_app() -> Flask:
             ), 400
         result = _do_auth_results(raw_headers, trusted_hosts)
         # 空名单、空白头部等输入错误为 400；no_received / untrusted_top 为 200
+        status = 400 if result.get("error") else 200
+        return jsonify(result), status
+
+    @app.post("/api/analyze/from-alignment")
+    def from_alignment_api():
+        if request.is_json:
+            payload = request.get_json(silent=True)
+            if not isinstance(payload, dict):
+                return jsonify(
+                    {"error": "请求体必须是 JSON 对象，含 headers、trusted_hosts、"
+                     "org_domain 与 mode"}
+                ), 400
+            raw_headers = payload.get("headers", "")
+            trusted_hosts = payload.get("trusted_hosts", [])
+            org_domain = payload.get("org_domain", "")
+            mode = payload.get("mode", "strict")
+        else:
+            raw_headers = request.form.get("headers", "")
+            # 表单只支持每行一个主机名的文本（也兼容逗号 / 空白分隔）
+            trusted_hosts = request.form.get("trusted_hosts", "")
+            org_domain = request.form.get("org_domain", "")
+            mode = request.form.get("mode", "strict")
+        if not isinstance(raw_headers, str):
+            return jsonify({"error": "headers 必须是字符串"}), 400
+        if not isinstance(trusted_hosts, (str, list, tuple)) or (
+            isinstance(trusted_hosts, list)
+            and not all(isinstance(item, str) for item in trusted_hosts)
+        ):
+            return jsonify(
+                {"error": "trusted_hosts 必须是主机名字符串数组，或每行一个主机名的字符串"}
+            ), 400
+        if not isinstance(org_domain, str):
+            return jsonify({"error": "org_domain 必须是字符串（发件组织域）"}), 400
+        if not isinstance(mode, str):
+            return jsonify({"error": "mode 必须是字符串 strict 或 relaxed"}), 400
+        result = _do_from_alignment(raw_headers, trusted_hosts, org_domain, mode)
+        # 空名单、宽松模式缺组织域、模式非法、空白头部等输入错误为 400
         status = 400 if result.get("error") else 200
         return jsonify(result), status
 

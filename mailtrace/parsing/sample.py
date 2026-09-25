@@ -282,4 +282,51 @@ Subject: Authentication-Results source demo
 Message-ID: <authres-demo@external.example>
 """
 
+# 发件域对齐审计示例（与认证结果来源示例同一条链路，可信前缀为
+# edge.internal.corp / gw2.internal.corp 两跳；From 域为
+# mail.partner.example，发件组织域填 partner.example）：
+# - 第 1 条 AR（edge.internal.corp，本组织声明，归属第 1 跳）：
+#   spf=pass smtp.mailfrom=partner.example、dkim=pass
+#   header.d=partner.example（严格模式下与 From 域 mail.partner.example
+#   不完全相同 → 不对齐；宽松模式下均为组织域 partner.example 或其子域
+#   → 对齐）；dkim=fail 不是通过声明，不参与对齐；
+# - 第 2 条 AR（gw2.internal.corp，本组织声明，归属第 2 跳）：
+#   spf=pass smtp.mailfrom=bounce.partner.example（同样仅宽松模式对齐）；
+# - 第 3 条 AR（relay2.partner.example）：对应第 3 跳（可信边界之外），
+#   虽然 dkim=pass header.d=mail.partner.example 与 From 域完全相同，
+#   但不是本组织声明，**不采纳**；
+# 因此同一份头部：严格模式结论为“未见对齐证据”，宽松模式（组织域
+# partner.example）结论为“有对齐证据”。
+SAMPLE_HEADERS_ALIGN = """\
+Authentication-Results: edge.internal.corp;
+\tspf=pass smtp.mailfrom=partner.example;
+\tdkim=pass header.d=partner.example; dkim=fail header.d=attacker.example;
+\tdmarc=pass header.from=mail.partner.example
+Received: from gw2.internal.corp (gw2.internal.corp [10.20.0.2])
+\tby edge.internal.corp (Postfix) with ESMTPS id A101
+\tfor <user@corp.example>; Thu, 24 Sep 2026 03:05:10 +0000
+Authentication-Results: gw2.internal.corp;
+\tspf=pass smtp.mailfrom=bounce.partner.example
+Received: from gateway.partner.example (gateway.partner.example [203.0.113.55])
+\tby gw2.internal.corp (Postfix) with ESMTP id B202
+\tfor <user@corp.example>; Thu, 24 Sep 2026 03:04:30 +0000
+Authentication-Results: relay2.partner.example;
+\tdkim=pass header.d=mail.partner.example;
+\tspf=pass smtp.mailfrom=mail.partner.example
+Received: from relay1.external.example (relay1.external.example [198.51.100.20])
+\tby relay2.partner.example (Postfix) with ESMTP id C303
+\tfor <user@corp.example>; Thu, 24 Sep 2026 03:03:50 +0000
+Received: from sender.external.example (sender.external.example [192.0.2.90])
+\tby edge.external.example (Postfix) with ESMTP id E505
+\tfor <user@corp.example>; Thu, 24 Sep 2026 03:02:10 +0000
+Date: Thu, 24 Sep 2026 03:02:00 +0000
+From: Partner News <news@mail.partner.example>
+To: User <user@corp.example>
+Subject: From alignment demo
+Message-ID: <align-demo@mail.partner.example>
+"""
+
+# 发件组织域示例（宽松模式必填；上例 From 域 mail.partner.example 是其子域）
+SAMPLE_ORG_DOMAIN = "partner.example"
+
 

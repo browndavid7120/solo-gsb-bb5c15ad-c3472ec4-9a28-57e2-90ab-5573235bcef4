@@ -66,6 +66,17 @@
   authserv-id 与 by 主机不一致）。对本组织声明提取 `spf` / `dkim` /
   `dmarc` 的结果词，按原文顺序展示并**保留重复声明**；没有可信前缀
   （或没有任何字段归属本组织）时明确显示**无本组织声明**。
+- **发件域对齐审计**：在页面 **“发件域对齐审计”** 区域粘贴单封邮件原始头部、
+  填写本组织接收服务器名单与**发件组织域**并选择比较模式，或调用
+  `POST /api/analyze/from-alignment`（`headers` + `trusted_hosts` +
+  `org_domain` + `mode`）。系统复用 Authentication-Results 归属结果，
+  **只采纳本组织声明**中的 `spf=pass`（取 `smtp.mailfrom`）与
+  `dkim=pass`（取 `header.d`）身份域，与头部**唯一 From 地址域**比较：
+  **严格模式**要求身份域与 From 域完全相同；**宽松模式**要求两域均为
+  所填组织域或其子域（按标签边界匹配）。任一可信通过声明对齐即显示
+  **“有对齐证据”**；有可用通过声明但均不对齐显示**“未见对齐证据”**；
+  其余情况显示**“证据不足”**。逐条展示方法、声明字段位置、接收跳、
+  身份域及比较结果；重复 From、缺失域**不会静默择一**。
 
 解析核心（`mailtrace/`）仅依赖 Python 标准库，可脱离 Flask 单独使用或被其他程序导入。
 
@@ -105,11 +116,12 @@ docker build -t mailtrace . && docker run --rm -p 8000:8000 mailtrace
 
 | 用途 | 地址（默认 `http://localhost:8000`） |
 | --- | --- |
-| 页面（投递路径 / 对照 / 慢段归因 / ARC / DKIM 覆盖 / 可信边界 / 认证结果来源） | `http://localhost:8000/` |
+| 页面（投递路径 / 对照 / 慢段归因 / ARC / DKIM 覆盖 / 可信边界 / 认证结果来源 / 发件域对齐） | `http://localhost:8000/` |
 | 单份头部分析 | `POST http://localhost:8000/api/analyze` |
 | 脱敏分享报告 | `POST http://localhost:8000/api/analyze/share` |
 | **接收链可信边界** | `POST http://localhost:8000/api/analyze/trust-boundary` |
 | **认证结果来源** | `POST http://localhost:8000/api/analyze/auth-results` |
+| **发件域对齐审计** | `POST http://localhost:8000/api/analyze/from-alignment` |
 | 双邮件头路径对照 | `POST http://localhost:8000/api/compare` |
 | 多封慢段归因 | `POST http://localhost:8000/api/batch-delays` |
 | ARC 链结构检查 | `POST http://localhost:8000/api/arc/check` |
@@ -160,6 +172,14 @@ docker build -t mailtrace . && docker run --rm -p 8000:8000 mailtrace
    ✗ 无对应跳），并以结果词卡片汇总本组织声明的 `spf` / `dkim` /
    `dmarc`（按原文顺序、保留重复声明）；无法建立可信前缀时明确显示
    **无本组织声明**。
+10. 需要审计**发件域对齐**时，在 **“🧭 发件域对齐审计”** 区域粘贴单封邮件
+    原始头部、填写本组织接收服务器名单与**发件组织域**，并选择
+    **严格 / 宽松**比较模式（可点“填入示例”：同一份头部在严格模式下为
+    “未见对齐证据”，宽松模式下为“有对齐证据”，且含一条边界之外、
+    不被采纳的对齐声明），点击 **审计发件域对齐**：页面展示 From 域
+    解析结果（重复 From / 缺失域明确标出，不静默择一）、对齐结论，
+    以及每条本组织通过声明的方法、声明字段位置、接收跳、身份域与
+    逐条比较结果。
 
 慢段归因的聚合口径：
 
@@ -566,6 +586,82 @@ curl -s -X POST http://localhost:8000/api/analyze/auth-results \
   `untrusted_top` / `no_received`（均为 200）；空名单、类型错误、
   空白头部或超过 `MAX_INPUT_KB` 上限返回 **400** 及 `error` 说明。
 
+发件域对齐审计（本地启动后地址为
+`http://localhost:8000/api/analyze/from-alignment`，端口随 `HOST_PORT`
+变化，见下文“访问端口”）：
+
+```bash
+curl -s -X POST http://localhost:8000/api/analyze/from-alignment \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "headers": "Authentication-Results: edge.internal.corp; spf=pass smtp.mailfrom=partner.example; dkim=pass header.d=partner.example\nReceived: from gw2 ... by edge.internal.corp; ...\nFrom: News <news@mail.partner.example>\n...",
+        "trusted_hosts": ["edge.internal.corp", "gw2.internal.corp"],
+        "org_domain": "partner.example",
+        "mode": "relaxed"
+      }'
+```
+
+`headers` / `trusted_hosts` 的输入形式与 `/api/analyze/auth-results`
+相同；`org_domain` 为发件组织域字符串（**宽松模式必填**，严格模式可省略）；
+`mode` 为 `strict`（默认，身份域与 From 域完全相同）或 `relaxed`
+（两域均为组织域或其子域，按标签边界匹配）。返回结构与页面共用同一结果：
+
+```json
+{
+  "status": "established",
+  "mode": "relaxed",
+  "mode_label": "宽松模式",
+  "org_domain": "partner.example",
+  "alignment": "aligned",
+  "alignment_label": "有对齐证据",
+  "alignment_reason": null,
+  "message": "有对齐证据：第 1 条 Authentication-Results（归属头部自上而下第 1 跳）的 spf=pass 声明身份域 partner.example 与 From 域 mail.partner.example 对齐（宽松模式）。",
+  "from": {
+    "status": "ok",
+    "status_label": "唯一 From 域",
+    "field_count": 1,
+    "field_positions": [8],
+    "address": "news@mail.partner.example",
+    "domain": "mail.partner.example",
+    "detail": "唯一 From 地址 news@mail.partner.example，发件域 mail.partner.example"
+  },
+  "own_count": 2,
+  "claim_count": 3,
+  "usable_claim_count": 3,
+  "aligned_claim_count": 3,
+  "claims": [
+    {"method": "spf", "identity_prop": "smtp.mailfrom",
+     "identity_domain": "partner.example",
+     "field_index": 1, "field_position": 1, "hop_top_index": 1,
+     "authserv_id": "edge.internal.corp",
+     "compare": "aligned", "aligned": true, "detail": "……"},
+    {"method": "dkim", "identity_prop": "header.d", "...": "..."}
+  ]
+}
+```
+
+- 对齐结论 `alignment` 三选一：`aligned`（**有对齐证据**：任一可信通过
+  声明对齐）、`not_aligned`（**未见对齐证据**：有可用通过声明但均不
+  对齐）、`insufficient`（**证据不足**：其余情况，原因见
+  `alignment_reason`——`from_missing_field` / `from_multiple_fields` /
+  `from_no_address` / `from_multiple_addresses` / `from_missing_domain`
+  （From 域不可用，**重复 From 与缺失域不会静默择一**）、
+  `no_org_claims`（无本组织声明）、`no_pass_claims`（本组织声明中没有
+  spf/dkim 的 pass）、`no_identity_domain`（通过声明均缺身份域））。
+- `claims` 逐条列出本组织声明中的 `spf=pass` / `dkim=pass`：方法、
+  身份属性（`smtp.mailfrom` / `header.d`）、声明字段位置
+  （`field_index` 为第几条 AR 字段、`field_position` 为头部第几个
+  字段）、接收跳（`hop_top_index`，头部自上而下）、身份域与比较结果
+  （`compare` 为 `aligned` / `not_aligned` / `no_identity` /
+  `no_from`，`detail` 含具体比较说明）；非本组织声明与非 pass 结果
+  不参与。
+- 域名比较忽略大小写与末尾点；宽松模式的子域判断按**标签边界**
+  （`sub.example.com` 属于 `example.com`，`evil-example.com` 与
+  `example.com.evil.org` 不属于）。
+- 状态码约定：输入错误（空名单、宽松模式缺 `org_domain`、`mode`
+  非法、类型错误、空白头部、超过 `MAX_INPUT_KB` 上限）返回 **400**；
+  对齐结论的三种取值均为 **200**。
+
 健康检查：`GET http://localhost:8000/healthz`。
 
 ---
@@ -648,13 +744,14 @@ python -m unittest discover -s tests -v
 │       ├── dkim.py         # DKIM h= 头字段覆盖审计：逐条签名、自底部向上匹配、重复字段不合并
 │       ├── trust.py        # 接收链可信边界：自顶端连续 by 命中、边界位置、外部交接点
 │       ├── authres.py      # 认证结果来源：AR 归属紧邻 Received、可信前缀 + authserv-id 判定
-│       └── sample.py       # 页面“填入示例”数据（A / B、批量三份、ARC、DKIM、可信边界及认证结果来源示例）
+│       ├── align.py        # 发件域对齐审计：唯一 From 域、本组织通过声明身份域、严格/宽松比较
+│       └── sample.py       # 页面“填入示例”数据（A / B、批量三份、ARC、DKIM、可信边界、认证结果来源及发件域对齐示例）
 ├── wsgi.py                 # gunicorn / flask 启动入口
 ├── entrypoint.sh           # 容器启动时安装依赖并启动 gunicorn
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
-└── tests/                  # 解析核心、对照、脱敏、慢段归因、ARC 链、DKIM 覆盖、可信边界与认证结果来源单元测试
+└── tests/                  # 解析核心、对照、脱敏、慢段归因、ARC 链、DKIM 覆盖、可信边界、认证结果来源与发件域对齐单元测试
     ├── test_parser.py
     ├── test_compare.py
     ├── test_share.py
@@ -662,7 +759,8 @@ python -m unittest discover -s tests -v
     ├── test_arc.py
     ├── test_dkim.py
     ├── test_trust.py
-    └── test_authres.py
+    ├── test_authres.py
+    └── test_align.py
 ```
 
 ## 安全与隐私
