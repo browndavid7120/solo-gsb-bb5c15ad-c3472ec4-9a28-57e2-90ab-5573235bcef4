@@ -1,0 +1,18 @@
+services:
+  mailtrace:
+    build: .
+    image: mailtrace:latest
+    container_name: mailtrace
+    ports:
+      # 宿主机端口 HOST_PORT -> 容器内固定 8000
+      - "${HOST_PORT:-8000}:8000"
+    environment:
+      MAX_INPUT_KB: "${MAX_INPUT_KB:-256}"
+      # 设为 1 可跳过容器启动时的 pip install（离线/快速启动）
+      SKIP_STARTUP_INSTALL: "${SKIP_STARTUP_INSTALL:-0}"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

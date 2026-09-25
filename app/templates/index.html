@@ -1,0 +1,1200 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>邮件投递路径检查器</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel-2: #273449;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --line: #334155;
+    --accent: #38bdf8;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --error: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, "PingFang SC",
+      "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 24px 20px 64px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
+  .input-label {
+    display: block; font-size: 13px; font-weight: 600;
+    color: var(--muted); margin: 14px 0 6px;
+  }
+  textarea {
+    width: 100%; min-height: 180px; resize: vertical;
+    background: var(--panel); color: var(--text);
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; font: 12.5px/1.6 ui-monospace, SFMono-Regular,
+      Menlo, Consolas, monospace;
+  }
+  textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  .toolbar { display: flex; gap: 10px; margin: 12px 0 24px; flex-wrap: wrap; }
+  button {
+    border: 0; border-radius: 8px; padding: 9px 18px;
+    font-size: 14px; cursor: pointer; font-weight: 600;
+  }
+  .btn-primary { background: var(--accent); color: #082f49; }
+  .btn-compare { background: var(--ok); color: #052e1b; }
+  .btn-share { background: #a78bfa; color: #2e1065; }
+  .btn-ghost { background: var(--panel-2); color: var(--text); }
+  button:hover { filter: brightness(1.1); }
+  .stats {
+    display: grid; gap: 12px; margin-bottom: 22px;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+  .stat {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 12px 14px;
+  }
+  .stat .num { font-size: 22px; font-weight: 700; }
+  .stat .label { color: var(--muted); font-size: 12.5px; }
+  .num.ok { color: var(--ok); }
+  .num.warn { color: var(--warn); }
+  .num.error { color: var(--error); }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px 18px; margin-bottom: 14px;
+  }
+  .card h2 { font-size: 16px; margin: 0 0 10px; }
+  .banner {
+    background: #3b1d24; border: 1px solid var(--error);
+    color: #fecdd3; border-radius: 10px; padding: 12px 16px;
+    margin-bottom: 18px;
+  }
+  .summary {
+    display: grid; gap: 8px 24px;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+  .summary div { font-size: 13.5px; }
+  .summary .k { color: var(--muted); margin-right: 8px; }
+  .summary .v { word-break: break-all; }
+  .timeline { position: relative; margin-top: 8px; }
+  .hop {
+    position: relative; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px 18px 14px 22px; margin-bottom: 18px;
+  }
+  .hop::before {
+    content: ""; position: absolute; left: -22px; top: 26px;
+    width: 13px; height: 13px; border-radius: 50%;
+    background: var(--accent); border: 3px solid var(--bg);
+  }
+  .timeline::before {
+    content: ""; position: absolute; left: -16px; top: 8px; bottom: 8px;
+    width: 2px; background: var(--line);
+  }
+  .hop-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .hop-idx {
+    background: var(--accent); color: #082f49; font-weight: 700;
+    border-radius: 999px; padding: 1px 10px; font-size: 12.5px;
+  }
+  .hop-node { font-size: 16px; font-weight: 700; word-break: break-all; }
+  .hint { color: var(--muted); font-size: 12px; }
+  .hop-time { margin: 8px 0; font-size: 13.5px; }
+  .hop-time strong { color: var(--ok); }
+  .hop-grid {
+    display: grid; gap: 4px 24px; margin: 8px 0;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    font-size: 13px;
+  }
+  .hop-grid .k { color: var(--muted); margin-right: 6px; }
+  .anomalies { list-style: none; padding: 0; margin: 10px 0 0; }
+  .anomalies li {
+    border-radius: 8px; padding: 7px 12px; margin-top: 6px;
+    font-size: 13px;
+  }
+  .anomalies li.error { background: #3b1d24; color: #fecdd3; border: 1px solid #7f1d1d; }
+  .anomalies li.warn { background: #3a2f10; color: #fde68a; border: 1px solid #78350f; }
+  .delay {
+    display: inline-block; margin-top: 8px; font-size: 13px;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 999px; padding: 3px 12px;
+  }
+  .delay.bad { border-color: var(--warn); color: var(--warn); }
+  .delay.na { color: var(--muted); }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+  pre.raw {
+    background: #0b1220; border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 12px; overflow-x: auto; margin: 8px 0 0;
+    font: 12px/1.6 ui-monospace, Menlo, Consolas, monospace;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .legend { color: var(--muted); font-size: 12.5px; margin-top: 28px; }
+  code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
+
+  /* 双邮件头对照 */
+  .cmp-wrap { overflow-x: auto; }
+  table.cmp {
+    width: 100%; border-collapse: collapse; font-size: 13px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; overflow: hidden;
+  }
+  table.cmp th, table.cmp td {
+    padding: 9px 12px; text-align: left; vertical-align: top;
+    border-bottom: 1px solid var(--line);
+  }
+  table.cmp thead th {
+    background: var(--panel-2); color: var(--muted);
+    font-size: 12.5px; white-space: nowrap;
+  }
+  table.cmp tbody tr:last-child td { border-bottom: 0; }
+  table.cmp td.node { font-weight: 600; word-break: break-all; min-width: 150px; }
+  table.cmp td .sub { display: block; font-weight: 400; }
+  table.cmp td.na { color: var(--muted); font-style: italic; }
+  tr.common td { border-left: 3px solid var(--accent); }
+  tr.added td { border-left: 3px solid var(--ok); background: rgba(52, 211, 153, 0.06); }
+  tr.missing td { border-left: 3px solid var(--error); background: rgba(248, 113, 113, 0.06); }
+  .tag {
+    display: inline-block; border-radius: 999px; padding: 1px 10px;
+    font-size: 12px; font-weight: 700; white-space: nowrap;
+  }
+  .tag.common { background: var(--accent); color: #082f49; }
+  .tag.added { background: var(--ok); color: #052e1b; }
+  .tag.missing { background: var(--error); color: #450a0a; }
+  .diff-ok { color: var(--ok); font-weight: 700; }
+  .diff-na { color: var(--muted); }
+  .time-bad { color: var(--error); }
+
+  /* 多封慢段归因 */
+  table.seg {
+    width: 100%; border-collapse: collapse; font-size: 13px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; overflow: hidden;
+  }
+  table.seg th, table.seg td {
+    padding: 9px 12px; text-align: left; vertical-align: top;
+    border-bottom: 1px solid var(--line);
+  }
+  table.seg thead th {
+    background: var(--panel-2); color: var(--muted);
+    font-size: 12.5px; white-space: nowrap;
+  }
+  table.seg tbody tr:last-child td { border-bottom: 0; }
+  table.seg td.node { font-weight: 600; word-break: break-all; }
+  table.seg td .sub { display: block; font-weight: 400; }
+  .rank {
+    display: inline-block; min-width: 26px; text-align: center;
+    background: var(--warn); color: #422006; font-weight: 700;
+    border-radius: 999px; padding: 1px 8px; font-size: 12.5px;
+  }
+  .rank.fast { background: var(--panel-2); color: var(--muted); }
+  .arrow { color: var(--muted); font-weight: 700; padding: 0 6px; }
+  .seg-slow { color: var(--warn); font-weight: 700; white-space: nowrap; }
+  .seg-max { color: var(--text); white-space: nowrap; }
+  .msgerr-list { list-style: none; padding: 0; margin: 8px 0 0; }
+  .msgerr-list li {
+    border-radius: 8px; padding: 7px 12px; margin-top: 6px;
+    font-size: 13px; background: #3b1d24; color: #fecdd3;
+    border: 1px solid #7f1d1d;
+  }
+  .excluded-pills { display: flex; gap: 10px; flex-wrap: wrap; margin: 4px 0 16px; }
+  .pill {
+    border: 1px solid var(--line); background: var(--panel-2);
+    border-radius: 999px; padding: 4px 14px; font-size: 13px;
+  }
+  .pill strong { color: var(--warn); }
+  .section-title { margin: 36px 0 12px; font-size: 18px; }
+
+  /* DKIM h= 头字段覆盖 */
+  table.dkim {
+    width: 100%; border-collapse: collapse; font-size: 13px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; overflow: hidden; margin-top: 8px;
+  }
+  table.dkim th, table.dkim td {
+    padding: 8px 12px; text-align: left; vertical-align: top;
+    border-bottom: 1px solid var(--line);
+  }
+  table.dkim thead th {
+    background: var(--panel-2); color: var(--muted);
+    font-size: 12.5px; white-space: nowrap;
+  }
+  table.dkim tbody tr:last-child td { border-bottom: 0; }
+  table.dkim td.pos { white-space: nowrap; font-weight: 600; }
+  table.dkim td.val { word-break: break-all; }
+  .hchip {
+    display: inline-block; border-radius: 6px; padding: 1px 9px;
+    margin: 2px 4px 2px 0; font: 12px/1.7 ui-monospace, Menlo, Consolas,
+      monospace; border: 1px solid var(--line); background: var(--panel-2);
+  }
+  .hchip.match { border-color: var(--ok); color: var(--ok); }
+  .hchip.miss { border-color: var(--error); color: var(--error); }
+  .hchip.caution { border-color: var(--warn); color: var(--warn); }
+  .sig-meta { color: var(--muted); font-size: 12.5px; margin: 2px 0 8px; }
+  .sig-meta code { font-size: 12px; }
+  .dkim-notice {
+    background: #172b3a; border: 1px solid var(--accent);
+    color: #bae6fd; border-radius: 10px; padding: 10px 14px;
+    margin: 12px 0 0; font-size: 13px;
+  }
+
+  /* 接收链可信边界 */
+  .btn-trust { background: #22d3ee; color: #083344; }
+  .trust-list { margin-top: 10px; display: grid; gap: 10px; }
+  .trust-row {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 12px 16px;
+  }
+  .trust-row.trusted { border-left: 4px solid var(--ok); }
+  .trust-row.boundary {
+    border-left: 4px solid var(--error);
+    background: rgba(248, 113, 113, 0.08);
+  }
+  .trust-row.outside { border-left: 4px solid var(--line); opacity: 0.82; }
+  .trust-idx {
+    font-weight: 700; border-radius: 999px; padding: 1px 10px;
+    font-size: 12.5px; background: var(--panel-2); color: var(--text);
+  }
+  .trust-badge {
+    display: inline-block; border-radius: 999px; padding: 1px 10px;
+    font-size: 12px; font-weight: 700; white-space: nowrap;
+  }
+  .trust-badge.t-ok { background: var(--ok); color: #052e1b; }
+  .trust-badge.t-boundary { background: var(--error); color: #450a0a; }
+  .trust-badge.t-out { background: var(--panel-2); color: var(--muted); }
+  .trust-badge.t-reentry { background: var(--warn); color: #422006; }
+  .trust-msg.trust-ok {
+    background: #0f2e22; border-color: var(--ok); color: #a7f3d0;
+  }
+  .trust-msg.trust-bad {
+    background: #3b1d24; border-color: var(--error); color: #fecdd3;
+  }
+  .handoff-card { border: 1px solid var(--accent); }
+  .handoff-card strong { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📮 邮件投递路径检查器</h1>
+  <p class="subtitle">
+    粘贴邮件原始头部（含 <code>Received</code> 字段），自动展开折行、按实际投递顺序排列中继节点并计算相邻节点耗时。
+    顺序自上而下为：发件方 → 收件方。在 A、B 两侧各粘贴一份头部，可对照两份邮件的投递路径差异。
+  </p>
+
+  <form method="post" action="/analyze" id="mainForm">
+    <label class="input-label" for="headers_a">头部 A（基准）</label>
+    <textarea name="headers_a" id="headers_a"
+      placeholder="例如：&#10;Received: from mail.example.com ...&#10;    by mx.example.net; Tue, 23 Sep 2026 10:00:00 +0800">{{ headers_a or '' }}</textarea>
+    <label class="input-label" for="headers_b">头部 B（对照，仅“路径对照”时使用）</label>
+    <textarea name="headers_b" id="headers_b"
+      placeholder="粘贴另一份邮件原始头部，与 A 对照新增 / 缺失 / 共有的中继节点">{{ headers_b or '' }}</textarea>
+    <div class="toolbar">
+      <button class="btn-primary" type="submit">分析投递路径（A）</button>
+      <button class="btn-compare" type="submit" formaction="/compare">对照 A / B 路径</button>
+      <button class="btn-share" type="button" id="downloadShare">下载脱敏报告</button>
+      <button class="btn-ghost" type="button" id="fillSample">填入示例</button>
+      <button class="btn-ghost" type="button" id="clearInput">清空</button>
+      <span class="hint" style="align-self:center;">单侧输入上限 {{ max_input_kb }} KB（MAX_INPUT_KB）</span>
+    </div>
+    <p class="hint" style="margin:-14px 0 24px;">
+      “下载脱敏报告”基于当前“头部 A”内容，调用 <code>POST /api/analyze/share</code>：
+      主机名与 IP 按投递顺序替换为本次请求内稳定的 H1 / IP1 等别名，
+      仅导出路径序号、别名、UTC 时间、相邻耗时与异常说明，不含原始头部、邮件摘要或 Received ID。
+    </p>
+  </form>
+
+  <h2 class="section-title">🔏 ARC 链结构检查</h2>
+  <p class="subtitle" style="margin-bottom:10px;">
+    粘贴含 ARC 字段的邮件原始头部，系统按 <code>i</code> 标签把
+    <code>ARC-Seal</code> / <code>ARC-Message-Signature</code> /
+    <code>ARC-Authentication-Results</code> 归组为 ARC 实例并校验：
+    每个实例须三类字段各一条、实例号从 1 开始连续；首个实例（i=1）的 Seal
+    <code>cv</code> 须为 <code>none</code>，后续实例须为 <code>pass</code>。
+    折行与标签书写顺序不影响识别；非法 <code>i</code>、字段重复 / 缺失、跳号、
+    <code>cv</code> 异常会逐项定位。完全没有 ARC 字段时报告“无 ARC 链”，不判定通过。
+  </p>
+  <form method="post" action="/arc-check" id="arcForm">
+    <textarea name="headers_arc" id="headers_arc" style="min-height:200px;"
+      placeholder="ARC-Seal: i=1; a=rsa-sha256; cv=none; d=example.com; s=arc; b=...&#10;ARC-Message-Signature: i=1; a=rsa-sha256; ...&#10;ARC-Authentication-Results: i=1; mx.example.com; spf=pass ...">{{ headers_arc or '' }}</textarea>
+    <div class="toolbar">
+      <button class="btn-primary" type="submit">检查 ARC 链</button>
+      <button class="btn-ghost" type="button" id="fillArcSample">填入示例</button>
+      <button class="btn-ghost" type="button" id="clearArc">清空</button>
+      <span class="hint" style="align-self:center;">也可调用 <code>POST /api/arc/check</code>（JSON：<code>{"headers": "..."}</code>）</span>
+    </div>
+  </form>
+
+  <h2 class="section-title">✍️ DKIM 头字段覆盖审计</h2>
+  <p class="subtitle" style="margin-bottom:10px;">
+    粘贴含 <code>DKIM-Signature</code> 的邮件原始头部，系统复用同一套折行展开，
+    逐条读取每条签名的 <code>h=</code> 列表，并<strong>独立地</strong>按列表顺序、
+    从头部底部向上为同名项匹配尚未使用的实际字段（重复字段名不按集合合并，
+    依据 RFC 6376）。展示每条签名的匹配结果与字段位置、未匹配的 <code>h=</code> 项，
+    以及 <code>From</code> / <code>Subject</code> / <code>To</code> / <code>Date</code>
+    中未被该签名覆盖的实际副本。无签名时单独报告；缺失或空 <code>h=</code> 标为异常。
+    结果<strong>只表示字段覆盖，不宣称签名真伪</strong>。
+  </p>
+  <form method="post" action="/dkim-coverage" id="dkimForm">
+    <textarea name="headers_dkim" id="headers_dkim" style="min-height:200px;"
+      placeholder="DKIM-Signature: v=1; d=example.com; s=sel; h=From:To:Subject:Date; b=...&#10;Received: ...&#10;From: ...&#10;To: ...&#10;Subject: ...&#10;Date: ...">{{ headers_dkim or '' }}</textarea>
+    <div class="toolbar">
+      <button class="btn-primary" type="submit">审计 DKIM 覆盖</button>
+      <button class="btn-ghost" type="button" id="fillDkimSample">填入示例</button>
+      <button class="btn-ghost" type="button" id="clearDkim">清空</button>
+      <span class="hint" style="align-self:center;">也可调用 <code>POST /api/dkim/coverage</code>（JSON：<code>{"headers": "..."}</code>）</span>
+    </div>
+  </form>
+
+  <h2 class="section-title">🔗 接收链可信边界（单封邮件）</h2>
+  <p class="subtitle" style="margin-bottom:10px;">
+    粘贴单封邮件的原始头部，并填写<strong>本组织接收服务器主机名名单</strong>（每行一个，
+    忽略大小写与末尾点）。系统复用同一套 Received 解析，从头部<strong>最上方</strong>
+    （最终接收服务器最新追加的一条）开始向下逐跳检查 <code>by</code> 主机名：
+    只有<strong>自顶端连续命中</strong>名单的跳才标为可信，首个未命中或缺少
+    <code>by</code> 的跳即为<strong>可信边界</strong>；边界之后即使再命中名单也
+    <strong>不会重新接入</strong>。页面展示每跳可信状态、边界位置，以及最后可信跳
+    记录的 <code>from</code> 主机与对端 IP（外部交接点）。顶端未命中或没有
+    Received 时明确提示无法建立可信链。
+  </p>
+  <form method="post" action="/trust-boundary" id="trustForm">
+    <textarea name="headers_trust" id="headers_trust" style="min-height:220px;"
+      placeholder="粘贴单封邮件完整原始头部（含多个 Received 字段，最上方为最终接收服务器）……">{{ headers_trust or '' }}</textarea>
+    <label class="input-label" for="trusted_hosts">本组织接收服务器主机名名单（每行一个，也可用逗号 / 空格分隔）</label>
+    <textarea name="trusted_hosts" id="trusted_hosts" style="min-height:88px;"
+      placeholder="edge.internal.corp&#10;gw2.internal.corp">{{ trusted_hosts_text or '' }}</textarea>
+    <div class="toolbar">
+      <button class="btn-trust" type="submit">分析可信边界</button>
+      <button class="btn-ghost" type="button" id="fillTrustSample">填入示例</button>
+      <button class="btn-ghost" type="button" id="clearTrust">清空</button>
+      <span class="hint" style="align-self:center;">也可调用 <code>POST /api/analyze/trust-boundary</code>（JSON：<code>{"headers": "...", "trusted_hosts": ["..."]}</code>）</span>
+    </div>
+  </form>
+
+  <h2 class="section-title">🛡️ 认证结果来源（Authentication-Results 归属）</h2>
+  <p class="subtitle" style="margin-bottom:10px;">
+    粘贴单封邮件的原始头部，并填写<strong>本组织接收服务器主机名名单</strong>（每行一个，
+    忽略大小写与末尾点）。系统复用折行展开与可信边界分析，把每条
+    <code>Authentication-Results</code> 归属到其后<strong>紧邻的
+    <code>Received</code></strong>（两者之间不得有另一条 <code>Received</code>）：
+    仅当该跳属于<strong>自顶端连续可信前缀</strong>、且 <code>authserv-id</code>
+    与该跳 <code>by</code> 主机一致时，才标为<strong>本组织声明</strong>；其余逐条标明
+    <strong>无对应跳 / 越过边界 / 身份不符</strong>。对本组织声明提取
+    <code>spf</code> / <code>dkim</code> / <code>dmarc</code> 结果词，
+    按原文顺序展示并保留重复声明；没有可信前缀时明确显示<strong>无本组织声明</strong>。
+  </p>
+  <form method="post" action="/auth-results" id="authresForm">
+    <textarea name="headers_authres" id="headers_authres" style="min-height:220px;"
+      placeholder="粘贴单封邮件完整原始头部（含 Authentication-Results 与 Received 字段）……">{{ headers_authres or '' }}</textarea>
+    <label class="input-label" for="trusted_hosts_authres">本组织接收服务器主机名名单（每行一个，也可用逗号 / 空格分隔）</label>
+    <textarea name="trusted_hosts_authres" id="trusted_hosts_authres" style="min-height:88px;"
+      placeholder="edge.internal.corp&#10;gw2.internal.corp">{{ trusted_hosts_authres_text or '' }}</textarea>
+    <div class="toolbar">
+      <button class="btn-trust" type="submit">分析认证结果来源</button>
+      <button class="btn-ghost" type="button" id="fillAuthresSample">填入示例</button>
+      <button class="btn-ghost" type="button" id="clearAuthres">清空</button>
+      <span class="hint" style="align-self:center;">也可调用 <code>POST /api/analyze/auth-results</code>（JSON：<code>{"headers": "...", "trusted_hosts": ["..."]}</code>）</span>
+    </div>
+  </form>
+
+  <h2 class="section-title">📊 多封邮件慢段归因（至少 3 封）</h2>
+  <p class="subtitle" style="margin-bottom:10px;">
+    在下面粘贴多封邮件的原始头部，每两封之间单独一行写分隔符
+    （<code>===== 下一封邮件 =====</code>，也可用 <code>---</code>、<code>###</code>、<code>***</code>
+    等至少 3 个重复符号的分隔行）。系统按每封邮件投递顺序中<strong>实际相邻的两个节点</strong>聚合，
+    输出各慢段的样本数、中位耗时、最大耗时（从慢到快），并统计因时间无效或时间倒灌被排除的区段数。
+  </p>
+  <form method="post" action="/batch-delays" id="batchForm">
+    <textarea name="headers_batch" id="headers_batch" style="min-height:260px;"
+      placeholder="第 1 封邮件完整原始头部……&#10;===== 下一封邮件 =====&#10;第 2 封邮件完整原始头部……&#10;===== 下一封邮件 =====&#10;第 3 封邮件完整原始头部……">{{ headers_batch or '' }}</textarea>
+    <div class="toolbar">
+      <button class="btn-primary" type="submit">慢段归因（多封）</button>
+      <button class="btn-ghost" type="button" id="fillBatchSample">填入 3 封示例</button>
+      <button class="btn-ghost" type="button" id="clearBatch">清空</button>
+    </div>
+  </form>
+
+  {% if arc %}
+    {% if arc.error %}
+      <div class="banner">{{ arc.error }}</div>
+    {% else %}
+      <h2 style="font-size:18px;">ARC 链结构检查结果</h2>
+      <div class="stats">
+        <div class="stat">
+          <div class="num {% if arc.status == 'pass' %}ok{% elif arc.status == 'fail' %}error{% endif %}">{{ arc.status_label }}</div>
+          <div class="label">总状态</div>
+        </div>
+        <div class="stat"><div class="num">{{ arc.arc_field_count }}</div><div class="label">ARC 字段数</div></div>
+        <div class="stat"><div class="num">{{ arc.instance_count }}</div><div class="label">ARC 实例数</div></div>
+        <div class="stat"><div class="num {% if arc.error_count %}error{% endif %}">{{ arc.error_count }}</div><div class="label">结构问题</div></div>
+      </div>
+
+      {% if arc.status == 'none' %}
+        <div class="banner">未检测到 ARC-Seal / ARC-Message-Signature / ARC-Authentication-Results 字段：无 ARC 链，不判定通过。</div>
+      {% else %}
+        {% if arc.issues %}
+        <div class="card">
+          <h2>逐项问题定位</h2>
+          <ul class="anomalies">
+            {% for issue in arc.issues %}
+            <li class="error">⛔
+              {%- if issue.instance is not none %} 实例 i={{ issue.instance }}{% if issue.field %} ·{% endif %}{% endif %}
+              {%- if issue.field %} {{ issue.field }} ·{% endif %} {{ issue.message }}
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        {% for inst in arc.instances %}
+        <div class="hop">
+          <div class="hop-head">
+            <span class="hop-idx">i={{ inst.i }}</span>
+            <span class="hop-node">ARC 实例 {{ inst.i }}</span>
+            {% if inst.ok %}<span class="tag added">正常</span>{% else %}<span class="tag missing">异常</span>{% endif %}
+            <span class="hint">{% if inst.i == 1 %}首个实例：Seal cv 须为 none{% else %}后续实例：Seal cv 须为 pass{% endif %}</span>
+          </div>
+          <div class="hop-grid">
+            <div><span class="k">ARC-Seal</span>
+              {% if inst.seal.present %}
+                cv={{ inst.seal.cv or '（缺失）' }}
+                {% if inst.seal.cv_ok %}<span class="diff-ok">✓ 符合预期（{{ inst.seal.cv_expected }}）</span>
+                {% elif inst.seal.cv_ok == false %}<span class="time-bad">✗ 应为 {{ inst.seal.cv_expected }}</span>{% endif %}
+                {% if inst.seal.count > 1 %}<span class="time-bad">（重复 ×{{ inst.seal.count }}）</span>{% endif %}
+              {% else %}<span class="time-bad">缺失</span>{% endif %}
+            </div>
+            <div><span class="k">ARC-Message-Signature</span>
+              {% if inst.message_signature.present %}已提供
+                {% if inst.message_signature.count > 1 %}<span class="time-bad">（重复 ×{{ inst.message_signature.count }}）</span>{% endif %}
+              {% else %}<span class="time-bad">缺失</span>{% endif %}
+            </div>
+            <div><span class="k">ARC-Authentication-Results</span>
+              {% if inst.authentication_results.present %}已提供
+                {% if inst.authentication_results.count > 1 %}<span class="time-bad">（重复 ×{{ inst.authentication_results.count }}）</span>{% endif %}
+              {% else %}<span class="time-bad">缺失</span>{% endif %}
+            </div>
+          </div>
+          {% if inst.seal.raw or inst.message_signature.raw or inst.authentication_results.raw %}
+          <details>
+            <summary>查看原始 ARC 字段（保留折行）</summary>
+            {% if inst.seal.raw %}<pre class="raw">{{ inst.seal.raw }}</pre>{% endif %}
+            {% if inst.message_signature.raw %}<pre class="raw">{{ inst.message_signature.raw }}</pre>{% endif %}
+            {% if inst.authentication_results.raw %}<pre class="raw">{{ inst.authentication_results.raw }}</pre>{% endif %}
+          </details>
+          {% endif %}
+        </div>
+        {% endfor %}
+
+        {% if arc.invalid_fields %}
+        <div class="card">
+          <h2>无法归组的 ARC 字段（i 标签非法或缺失）</h2>
+          <ul class="anomalies">
+            {% for f in arc.invalid_fields %}
+            <li class="error">⛔ {{ f.field }}{% if f.i_raw %}（i={{ f.i_raw }}）{% endif %}：{{ f.message }}</li>
+            {% endfor %}
+          </ul>
+          {% for f in arc.invalid_fields %}
+          <details>
+            <summary>{{ f.field }} 原文</summary>
+            <pre class="raw">{{ f.raw }}</pre>
+          </details>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <p class="legend">
+          检查口径：按 <code>i</code> 标签归组三类 ARC 字段（与折行、标签书写顺序无关）；
+          每实例须三类字段各一条，实例号从 1 开始连续（合法范围 1-50）；i=1 的 Seal
+          <code>cv</code> 须为 <code>none</code>，i&gt;1 须为 <code>pass</code>
+          （cv 比较忽略大小写）。
+        </p>
+      {% endif %}
+    {% endif %}
+  {% endif %}
+
+  {% if dkim %}
+    {% if dkim.error %}
+      <div class="banner">{{ dkim.error }}</div>
+    {% else %}
+      <h2 style="font-size:18px;">DKIM 头字段覆盖审计结果</h2>
+      <div class="stats">
+        <div class="stat">
+          <div class="num {% if dkim.status == 'ok' %}ok{% elif dkim.status == 'anomaly' %}error{% endif %}">{{ dkim.status_label }}</div>
+          <div class="label">总状态</div>
+        </div>
+        <div class="stat"><div class="num">{{ dkim.signature_count }}</div><div class="label">DKIM 签名数</div></div>
+        <div class="stat"><div class="num {% if dkim.anomaly_count %}error{% endif %}">{{ dkim.anomaly_count }}</div><div class="label">异常签名（缺 / 空 h=）</div></div>
+        <div class="stat"><div class="num">{{ dkim.header_field_count }}</div><div class="label">头部字段总数</div></div>
+      </div>
+
+      {% if dkim.status == 'none' %}
+        <div class="banner">{{ dkim.notice }}</div>
+      {% else %}
+        {% for sig in dkim.signatures %}
+        <div class="hop">
+          <div class="hop-head">
+            <span class="hop-idx">#{{ sig.index }}</span>
+            <span class="hop-node">DKIM 签名 {{ sig.index }}</span>
+            {% if sig.status == 'ok' %}<span class="tag added">h= 正常</span>{% else %}<span class="tag missing">h= 异常</span>{% endif %}
+            <span class="hint">DKIM-Signature 位于第 {{ sig.field_position }} 个字段</span>
+          </div>
+          <div class="sig-meta">
+            {% if sig.domain %}<span class="k">d=</span><code>{{ sig.domain }}</code>{% endif %}
+            {% if sig.selector %}<span class="k" style="margin-left:14px;">s=</span><code>{{ sig.selector }}</code>{% endif %}
+            <span style="margin-left:14px;">h= 项 {{ sig.h_count }} ·
+              <span class="diff-ok">匹配 {{ sig.matched_count }}</span> ·
+              <span class="{% if sig.unmatched_count %}time-bad{% else %}hint{% endif %}">未匹配 {{ sig.unmatched_count }}</span>
+            </span>
+          </div>
+
+          {% if sig.issues %}
+          <ul class="anomalies">
+            {% for iss in sig.issues %}
+            <li class="error">⛔ {{ iss.message }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+
+          {% if sig.h_results %}
+          <div style="margin:8px 0 2px;"><span class="hint">h= 列表逐项匹配（顺序自左向右，匹配自底部向上）：</span></div>
+          <div>
+            {% for item in sig.h_results %}
+            <span class="hchip {% if item.matched %}match{% else %}miss{% endif %}"
+              title="{% if item.matched %}匹配到第 {{ item.field_position }} 个字段{% else %}h= 第 {{ item.list_index }} 项未匹配{% endif %}">
+              {{ loop.index }}. {{ item.name or '（空字段名）' }}
+              {% if item.matched %}→ #{{ item.field_position }} ✓{% else %}✗{% endif %}
+            </span>
+            {% endfor %}
+          </div>
+
+          <details>
+            <summary>查看 h= 逐项匹配明细与未覆盖的实际字段副本</summary>
+            <table class="dkim">
+              <thead>
+                <tr><th>h= 序号</th><th>h= 字段名</th><th>匹配结果</th><th>实际字段值（展开折行）</th></tr>
+              </thead>
+              <tbody>
+                {% for item in sig.h_results %}
+                <tr>
+                  <td class="pos">{{ item.list_index }}</td>
+                  <td><code>{{ item.name or '（空字段名）' }}</code></td>
+                  <td class="pos">
+                    {% if item.matched %}<span class="diff-ok">第 {{ item.field_position }} 个字段 ✓</span>
+                    {% else %}<span class="time-bad">未匹配 ✗</span>{% endif %}
+                  </td>
+                  <td class="val">{{ item.value or '—' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </details>
+          {% endif %}
+
+          {% if sig.unmatched %}
+          <div class="card" style="margin-top:12px;">
+            <h2>未匹配的 h= 项（{{ sig.unmatched_count }}）</h2>
+            <table class="dkim">
+              <thead><tr><th>h= 序号</th><th>字段名</th><th>说明</th></tr></thead>
+              <tbody>
+                {% for u in sig.unmatched %}
+                <tr>
+                  <td class="pos">{{ u.list_index }}</td>
+                  <td><code>{{ u.name or '（空字段名）' }}</code></td>
+                  <td class="time-bad">{{ u.message }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% endif %}
+
+          <div class="card" style="margin-top:12px;">
+            <h2>From / Subject / To / Date 中未被本签名覆盖的实际副本（{{ sig.uncovered_core | length }}）</h2>
+            {% if sig.uncovered_core %}
+            <table class="dkim">
+              <thead><tr><th>字段</th><th>字段位置</th><th>实际值（展开折行）</th></tr></thead>
+              <tbody>
+                {% for f in sig.uncovered_core %}
+                <tr>
+                  <td class="pos">{{ f.field }}</td>
+                  <td class="pos"><span class="time-bad">第 {{ f.position }} 个字段</span></td>
+                  <td class="val">{{ f.value }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+            <p class="hint" style="margin:0;">From / Subject / To / Date 的所有实际副本均已被本签名覆盖。</p>
+            {% endif %}
+          </div>
+
+          <details>
+            <summary>查看 DKIM-Signature 原文（保留折行）</summary>
+            <pre class="raw">{{ sig.raw }}</pre>
+          </details>
+        </div>
+        {% endfor %}
+
+        <p class="dkim-notice">{{ dkim.notice }}</p>
+        <p class="legend">
+          审计口径：复用折行展开解析，逐条读取每条 <code>DKIM-Signature</code> 的
+          <code>h=</code> 列表；每条签名独立处理，自左向右遍历 <code>h=</code> 项，
+          每项自头部<strong>底部向上</strong>取第一个同名且尚未被本签名使用的实际字段
+          （RFC 6376：重复字段名不按集合合并，多副本同名头从最新一条开始占用）。
+          当前被审计的 DKIM-Signature 自身不参与匹配；字段位置按头部出现先后从 1 计数。
+        </p>
+      {% endif %}
+    {% endif %}
+  {% endif %}
+
+  {% if trust %}
+    {% if trust.error %}
+      <div class="banner">{{ trust.error }}</div>
+    {% else %}
+      <h2 style="font-size:18px;">接收链可信边界结果</h2>
+      <div class="stats">
+        <div class="stat">
+          <div class="num {% if trust.status == 'established' %}ok{% else %}error{% endif %}">{{ trust.status_label }}</div>
+          <div class="label">可信链状态</div>
+        </div>
+        <div class="stat"><div class="num ok">{{ trust.trusted_count }}</div><div class="label">连续可信跳（自顶端）</div></div>
+        <div class="stat"><div class="num {% if trust.untrusted_count %}error{% endif %}">{{ trust.untrusted_count }}</div><div class="label">边界之外跳数</div></div>
+        <div class="stat">
+          <div class="num {% if trust.boundary %}warn{% else %}ok{% endif %}">{% if trust.boundary %}第 {{ trust.boundary.top_index }} 跳{% else %}无边界{% endif %}</div>
+          <div class="label">边界位置（头部自上而下）</div>
+        </div>
+      </div>
+
+      <div class="banner trust-msg {% if trust.status == 'established' %}trust-ok{% else %}trust-bad{% endif %}">{{ trust.message }}</div>
+
+      {% if trust.last_trusted_hop %}
+      <div class="card handoff-card">
+        <h2>🔀 外部交接点（最后可信跳记录）</h2>
+        <div class="hop-grid">
+          <div>
+            <span class="k">最后可信跳</span>头部自上而下第
+            <strong>{{ trust.last_trusted_hop.top_index }}</strong> 跳
+            （<code>by {{ trust.last_trusted_hop.by_host or '（缺失）' }}</code>）
+          </div>
+          <div><span class="k">对端 from 主机</span>
+            {% if trust.last_trusted_hop.from_host %}<strong>{{ trust.last_trusted_hop.from_host }}</strong>
+            {% else %}<span class="hint">该跳未记录 from 主机</span>{% endif %}
+          </div>
+          <div><span class="k">对端 IP</span>
+            {% if trust.last_trusted_hop.ip %}<strong>{{ trust.last_trusted_hop.ip }}</strong>
+            {% else %}<span class="hint">未解析到对端 IP</span>{% endif %}
+          </div>
+          <div><span class="k">接收时间（UTC）</span>{{ trust.last_trusted_hop.time_utc or '—' }}</div>
+        </div>
+        <p class="hint" style="margin:8px 0 0;">
+          这是本组织接收服务器在可信链最外侧一跳中记录的来源主机 / IP，
+          即邮件从外部进入本组织的交接位置；边界跳及之后的内容不受信任。
+        </p>
+      </div>
+      {% endif %}
+
+      {% if trust.hops %}
+      <div class="trust-list">
+        {% for hop in trust.hops %}
+        <div class="trust-row {% if hop.trusted %}trusted{% elif hop.is_boundary %}boundary{% else %}outside{% endif %}">
+          <div class="hop-head">
+            <span class="trust-idx">头部第 {{ hop.top_index }} 跳</span>
+            {% if hop.trusted %}
+              <span class="trust-badge t-ok">✓ 可信</span>
+            {% elif hop.is_boundary %}
+              <span class="trust-badge t-boundary">⛔ 可信边界（首未命中）</span>
+            {% else %}
+              <span class="trust-badge t-out">✗ 不可信（边界之外）</span>
+            {% endif %}
+            {% if hop.reentry_listed %}
+              <span class="trust-badge t-reentry">by 命中名单但不重新接入</span>
+            {% endif %}
+            <span class="hint">投递方向第 {{ hop.path_index }} 跳</span>
+          </div>
+          <div class="hop-grid">
+            <div><span class="k">by</span>
+              {% if hop.by_host %}<code>{{ hop.by_host }}</code>
+                {% if hop.by_listed %}<span class="diff-ok">命中名单</span>
+                {% else %}<span class="time-bad">不在名单内</span>{% endif %}
+              {% else %}<span class="time-bad">缺少 by 主机名</span>{% endif %}
+            </div>
+            <div><span class="k">from</span>{{ hop.from_host or '—' }}</div>
+            <div><span class="k">对端 IP</span>{{ hop.ip or '—' }}</div>
+            <div><span class="k">时间（UTC）</span>{{ hop.time_utc or '—' }}</div>
+          </div>
+          <details>
+            <summary>查看原始 Received 字段（保留折行）</summary>
+            <pre class="raw">{{ hop.raw }}</pre>
+          </details>
+        </div>
+        {% endfor %}
+      </div>
+      <p class="legend">
+        检查口径：复用单封分析的 Received 解析结果，按<strong>头部书写顺序</strong>
+        （最上方 = 最终接收服务器）逐跳检查 <code>by</code> 主机名；仅自顶端
+        <strong>连续命中</strong>本组织名单（忽略大小写与末尾点）的跳为可信，
+        首个未命中 / 缺少 <code>by</code> 的跳闭合可信边界，其后所有跳
+        （含再次命中名单者）均不再接入可信链。
+      </p>
+      {% endif %}
+    {% endif %}
+  {% endif %}
+
+  {% if authres %}
+    {% if authres.error %}
+      <div class="banner">{{ authres.error }}</div>
+    {% else %}
+      <h2 style="font-size:18px;">认证结果来源（Authentication-Results 归属）结果</h2>
+      <div class="stats">
+        <div class="stat">
+          <div class="num {% if authres.status == 'established' %}ok{% else %}error{% endif %}">{{ authres.status_label }}</div>
+          <div class="label">可信前缀状态</div>
+        </div>
+        <div class="stat"><div class="num ok">{{ authres.trusted_count }}</div><div class="label">连续可信跳（自顶端）</div></div>
+        <div class="stat"><div class="num">{{ authres.ar_count }}</div><div class="label">Authentication-Results 字段</div></div>
+        <div class="stat"><div class="num {% if authres.own_count %}ok{% else %}error{% endif %}">{{ authres.own_count }}</div><div class="label">本组织声明</div></div>
+      </div>
+
+      <div class="banner trust-msg {% if authres.own_count %}trust-ok{% else %}trust-bad{% endif %}">{{ authres.message }}</div>
+
+      {% if authres.no_org_claims %}
+      <div class="banner">🚫 无本组织声明：
+        {%- if authres.no_org_reason == 'no_trusted_prefix' %}无法建立自顶端连续可信前缀，任何 Authentication-Results 都不能归属本组织。
+        {%- elif authres.no_org_reason == 'no_auth_results' %}头部中没有 Authentication-Results 字段。
+        {%- else %}所有 Authentication-Results 字段均未能归属本组织可信前缀内的接收跳（逐条原因见下）。
+        {%- endif %}
+      </div>
+      {% else %}
+      <div class="card">
+        <h2>✅ 本组织声明的认证结果（按原文顺序，保留重复声明）</h2>
+        <div>
+          {% for item in authres.auth_summary %}
+          <span class="hchip {% if item.result.lower() == 'pass' %}match{% elif item.result.lower() == 'fail' %}miss{% else %}caution{% endif %}"
+            title="来自第 {{ item.field_index }} 条 Authentication-Results（归属头部第 {{ item.hop_top_index }} 跳）">{{ item.method }}={{ item.result or '（空）' }}</span>
+          {% endfor %}
+        </div>
+        <p class="hint" style="margin:8px 0 0;">仅汇总判定为本组织声明的字段；同一方法多次出现（多条签名 / 多个字段）按原文顺序逐条保留，不去重。</p>
+      </div>
+      {% endif %}
+
+      {% if authres.results %}
+      <div class="trust-list">
+        {% for r in authres.results %}
+        <div class="trust-row {% if r.status == 'own' %}trusted{% elif r.status == 'beyond_boundary' %}boundary{% else %}outside{% endif %}">
+          <div class="hop-head">
+            <span class="trust-idx">第 {{ r.index }} 条</span>
+            {% if r.status == 'own' %}
+              <span class="trust-badge t-ok">✓ 本组织声明</span>
+            {% elif r.status == 'no_hop' %}
+              <span class="trust-badge t-out">✗ 无对应跳</span>
+            {% elif r.status == 'beyond_boundary' %}
+              <span class="trust-badge t-boundary">⛔ 越过边界</span>
+            {% else %}
+              <span class="trust-badge t-reentry">⚠ 身份不符</span>
+            {% endif %}
+            <span class="hint">头部第 {{ r.field_position }} 个字段</span>
+          </div>
+          <div class="hop-grid">
+            <div><span class="k">authserv-id</span>
+              {% if r.authserv_id %}<code>{{ r.authserv_id }}</code>
+              {% else %}<span class="time-bad">缺失 / none</span>{% endif %}
+            </div>
+            <div><span class="k">对应 Received</span>
+              {% if r.hop_top_index %}头部自上而下第 {{ r.hop_top_index }} 跳{% else %}—{% endif %}
+            </div>
+            <div><span class="k">该跳 by</span>{{ r.hop_by_host or '—' }}</div>
+          </div>
+          <p class="hint" style="margin:6px 0 0;">{{ r.detail }}</p>
+          {% if r.methods %}
+          <div style="margin-top:8px;">
+            {% for m in r.methods %}
+            <span class="hchip {% if m.result.lower() == 'pass' %}match{% elif m.result.lower() == 'fail' %}miss{% else %}caution{% endif %}">{{ m.method }}={{ m.result or '（空）' }}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
+          <details>
+            <summary>查看原始 Authentication-Results 字段（保留折行）</summary>
+            <pre class="raw">{{ r.raw }}</pre>
+          </details>
+        </div>
+        {% endfor %}
+      </div>
+      <p class="legend">
+        归属口径：每条 <code>Authentication-Results</code> 归属到其后紧邻的
+        <code>Received</code>（向下第一条，两者之间不得有另一条 <code>Received</code>）；
+        仅当该跳属于自顶端连续可信前缀、且 <code>authserv-id</code> 与该跳
+        <code>by</code> 主机一致（忽略大小写与末尾点）时标为本组织声明。
+        无对应跳 = 其后没有任何 <code>Received</code>；越过边界 = 对应跳不在
+        连续可信前缀内；身份不符 = 对应跳可信但 authserv-id 与 by 主机不一致。
+      </p>
+      {% endif %}
+    {% endif %}
+  {% endif %}
+
+  {% if batch %}
+    {% if batch.error %}
+      <div class="banner">{{ batch.error }}</div>
+    {% else %}      <h2 style="font-size:18px;">慢段归因结果（按中位耗时从慢到快）</h2>
+      <div class="stats">
+        <div class="stat"><div class="num">{{ batch.analyzed_count }} / {{ batch.message_count }}</div><div class="label">有效分析邮件 / 提交邮件</div></div>
+        <div class="stat"><div class="num">{{ batch.segment_count }}</div><div class="label">慢段（相邻节点对）</div></div>
+        <div class="stat"><div class="num">{{ batch.sample_count }}</div><div class="label">有效耗时样本</div></div>
+        <div class="stat"><div class="num warn">{{ batch.excluded.invalid_time }}</div><div class="label">排除：时间无效</div></div>
+        <div class="stat"><div class="num error">{{ batch.excluded.backflow }}</div><div class="label">排除：时间倒灌</div></div>
+        <div class="stat"><div class="num">{{ batch.excluded.identity_less }}</div><div class="label">未合并：区段缺身份</div></div>
+      </div>
+
+      {% if batch.duplicate_collapsed %}
+      <div class="excluded-pills">
+        <span class="pill">同封邮件重复同键区段已归并：<strong>{{ batch.duplicate_collapsed }}</strong> 个（每封每段仅取最大有效非负耗时）</span>
+      </div>
+      {% endif %}
+
+      {% if batch.message_errors %}
+      <div class="card">
+        <h2>未参与分析的邮件</h2>
+        <ul class="msgerr-list">
+          {% for me in batch.message_errors %}
+          <li>第 {{ me.index }} 封：{{ me.error }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {% if batch.segments %}
+      <div class="cmp-wrap">
+      <table class="seg">
+        <thead>
+          <tr>
+            <th>排名</th>
+            <th>慢段（上游 → 下游）</th>
+            <th>样本数</th>
+            <th>中位耗时</th>
+            <th>最大耗时</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for seg in batch.segments %}
+          <tr>
+            <td><span class="rank {% if loop.index > 3 %}fast{% endif %}">{{ seg.rank }}</span></td>
+            <td>
+              <span class="node">{{ seg.from.node }}
+                {% if seg.from.ip %}<span class="sub hint">对端 IP：{{ seg.from.ip }}</span>{% endif %}
+              </span>
+              <span class="arrow">→</span>
+              <span class="node">{{ seg.to.node }}
+                {% if seg.to.ip %}<span class="sub hint">对端 IP：{{ seg.to.ip }}</span>{% endif %}
+              </span>
+            </td>
+            <td>{{ seg.sample_count }}</td>
+            <td class="seg-slow">{{ seg.median_human }}</td>
+            <td class="seg-max">{{ seg.max_human }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% else %}
+      <div class="banner">没有可归因的有效慢段（所有相邻区段均被排除，或缺少可识别身份的节点）。</div>
+      {% endif %}
+
+      <p class="legend">
+        归因口径：每个区段是某封邮件投递顺序中<strong>实际相邻</strong>的两个节点，不跨节点拼接耗时；
+        节点身份为规范化 <code>by</code> 主机名与对端 IP 的<strong>完整已知字段组合</strong>
+        （by 或 IP 缺失即视为不同身份；任一端完全无身份的区段列出但不与其他邮件合并）。
+        同一封邮件中同一区段重复出现时仅取最大的有效非负耗时；时间无法解析或缺失记为“时间无效”，
+        下游时间早于上游（倒灌）记为“时间倒灌”，均不进入样本统计。
+      </p>
+    {% endif %}
+  {% endif %}
+
+  {% if compare %}
+    {% if compare.error %}
+      <div class="banner">{{ compare.error }}</div>
+    {% else %}
+      <h2 style="font-size:18px;">路径对照结果（A 为基准，B 为对照）</h2>
+      <div class="stats">
+        <div class="stat"><div class="num">{{ compare.a.hop_count }}</div><div class="label">A 侧中继节点</div></div>
+        <div class="stat"><div class="num">{{ compare.b.hop_count }}</div><div class="label">B 侧中继节点</div></div>
+        <div class="stat"><div class="num">{{ compare.alignment.common_count }}</div><div class="label">共有节点</div></div>
+        <div class="stat"><div class="num ok">{{ compare.alignment.added_count }}</div><div class="label">新增（仅 B）</div></div>
+        <div class="stat"><div class="num error">{{ compare.alignment.missing_count }}</div><div class="label">缺失（仅 A）</div></div>
+      </div>
+
+      <div class="cmp-wrap">
+      <table class="cmp">
+        <thead>
+          <tr>
+            <th>状态</th>
+            <th>A 侧节点</th>
+            <th>A 时间（UTC）</th>
+            <th>A 相邻耗时</th>
+            <th>B 侧节点</th>
+            <th>B 时间（UTC）</th>
+            <th>B 相邻耗时</th>
+            <th>耗时差值（B−A）</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in compare.alignment.rows %}
+          <tr class="{{ row.kind }}">
+            <td>
+              {% if row.kind == 'common' %}<span class="tag common">共有</span>
+              {% elif row.kind == 'added' %}<span class="tag added">新增</span>
+              {% else %}<span class="tag missing">缺失</span>{% endif %}
+            </td>
+            {% if row.kind == 'added' %}
+              <td class="na" colspan="3">A 侧无对应节点</td>
+              <td class="node">{{ row.b.node }}
+                {% if row.b.ip %}<span class="sub hint">对端 IP：{{ row.b.ip }}</span>{% endif %}
+                {% if row.b.anomalies %}<span class="sub hint">⚠ {{ row.b.anomalies | length }} 条异常/告警</span>{% endif %}
+              </td>
+              <td>{% if row.b.time_utc %}{{ row.b.time_utc }}{% else %}<span class="time-bad">无效 / 缺失</span>{% endif %}</td>
+              <td>{% if row.b.delay_human %}{{ row.b.delay_human }}{% elif row.b.path_index == 1 %}<span class="hint">首跳</span>{% else %}<span class="hint">不可计算</span>{% endif %}</td>
+              <td class="diff-na">—</td>
+            {% elif row.kind == 'missing' %}
+              <td class="node">{{ row.a.node }}
+                {% if row.a.ip %}<span class="sub hint">对端 IP：{{ row.a.ip }}</span>{% endif %}
+                {% if row.a.anomalies %}<span class="sub hint">⚠ {{ row.a.anomalies | length }} 条异常/告警</span>{% endif %}
+              </td>
+              <td>{% if row.a.time_utc %}{{ row.a.time_utc }}{% else %}<span class="time-bad">无效 / 缺失</span>{% endif %}</td>
+              <td>{% if row.a.delay_human %}{{ row.a.delay_human }}{% elif row.a.path_index == 1 %}<span class="hint">首跳</span>{% else %}<span class="hint">不可计算</span>{% endif %}</td>
+              <td class="na" colspan="3">B 侧无对应节点</td>
+              <td class="diff-na">—</td>
+            {% else %}
+              <td class="node">{{ row.a.node }}
+                {% if row.a.ip %}<span class="sub hint">对端 IP：{{ row.a.ip }}</span>{% endif %}
+                {% if row.a.anomalies %}<span class="sub hint">⚠ {{ row.a.anomalies | length }} 条异常/告警</span>{% endif %}
+              </td>
+              <td>{% if row.a.time_utc %}{{ row.a.time_utc }}{% else %}<span class="time-bad">无效 / 缺失</span>{% endif %}</td>
+              <td>{% if row.delay_a_human %}{{ row.delay_a_human }}{% elif row.a.path_index == 1 %}<span class="hint">首跳</span>{% else %}<span class="hint">不可计算</span>{% endif %}</td>
+              <td class="node">{{ row.b.node }}
+                {% if row.b.ip %}<span class="sub hint">对端 IP：{{ row.b.ip }}</span>{% endif %}
+                {% if row.b.anomalies %}<span class="sub hint">⚠ {{ row.b.anomalies | length }} 条异常/告警</span>{% endif %}
+              </td>
+              <td>{% if row.b.time_utc %}{{ row.b.time_utc }}{% else %}<span class="time-bad">无效 / 缺失</span>{% endif %}</td>
+              <td>{% if row.delay_b_human %}{{ row.delay_b_human }}{% elif row.b.path_index == 1 %}<span class="hint">首跳</span>{% else %}<span class="hint">不可计算</span>{% endif %}</td>
+              <td>
+                {% if row.diff_status == 'ok' %}<span class="diff-ok">{{ row.delay_diff_human }}</span>
+                {% elif row.diff_status == 'first_hop' %}<span class="diff-na">—（均为首跳）</span>
+                {% else %}<span class="diff-na">不可比较</span>{% endif %}
+              </td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      <p class="legend">
+        对照说明：节点按投递结构顺序做保序全局对齐；匹配依据为 <code>by</code> 主机与对端 IP
+        （任一冲突即视为不同节点，两者都缺失的节点不参与匹配，不会仅凭时间相近配对）。
+        耗时为各自路径内到上一相邻节点的耗时；任一侧时间无效时差值显示“不可比较”，
+        不会跳过中间节点拼接耗时。
+      </p>
+    {% endif %}
+  {% endif %}
+
+  {% if result %}
+    {% if result.error %}
+      <div class="banner">{{ result.error }}</div>
+    {% else %}
+      <div class="stats">
+        <div class="stat"><div class="num">{{ result.hop_count }}</div><div class="label">中继节点（Received）</div></div>
+        <div class="stat"><div class="num ok">{{ result.timed_count }}</div><div class="label">成功解析时间</div></div>
+        <div class="stat"><div class="num warn">{{ result.missing_count }}</div><div class="label">缺少/异常时间</div></div>
+        <div class="stat"><div class="num {% if result.error_count %}error{% endif %}">{{ result.error_count }}</div><div class="label">解析错误</div></div>
+        <div class="stat"><div class="num {% if result.warn_count %}warn{% endif %}">{{ result.warn_count }}</div><div class="label">告警</div></div>
+        <div class="stat"><div class="num">{{ result.total_span_human or '—' }}</div><div class="label">端到端耗时</div></div>
+      </div>
+
+      {% if result.summary %}
+      <div class="card">
+        <h2>主要头部字段</h2>
+        <div class="summary">
+          {% for key, val in result.summary.items() %}
+          <div><span class="k">{{ key }}:</span><span class="v">{{ val }}</span></div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="timeline">
+        {% for hop in result.path %}
+        <div class="hop">
+          <div class="hop-head">
+            <span class="hop-idx">#{{ hop.path_index }}</span>
+            <span class="hop-node">{{ hop.node }}</span>
+            <span class="hint">{{ hop.direction_hint }}</span>
+          </div>
+
+          <div class="hop-time">
+            时间（UTC）：
+            {% if hop.time_utc %}<strong>{{ hop.time_utc }}</strong>
+              {% if hop.naive_assumed_utc %}<span class="hint">（原时间无时区，按 UTC 处理）</span>{% endif %}
+            {% else %}<strong style="color:var(--error)">无法解析 / 缺失</strong>{% endif %}
+            {% if hop.date_raw %}<div class="hint">原始时间串：{{ hop.date_raw }}</div>{% endif %}
+          </div>
+
+          <div class="hop-grid">
+            {% if hop.from_host %}<div><span class="k">from</span>{{ hop.from_host }}</div>{% endif %}
+            {% if hop.by_host %}<div><span class="k">by</span>{{ hop.by_host }}</div>{% endif %}
+            {% if hop.via %}<div><span class="k">via</span>{{ hop.via }}</div>{% endif %}
+            {% if hop.with_proto %}<div><span class="k">with</span>{{ hop.with_proto }}</div>{% endif %}
+            {% if hop.id %}<div><span class="k">id</span>{{ hop.id }}</div>{% endif %}
+            {% if hop.ip %}<div><span class="k">对端 IP</span>{{ hop.ip }}</div>{% endif %}
+          </div>
+
+          {% if hop.path_index == 1 %}
+            <span class="delay na">首跳：无上游耗时</span>
+          {% elif hop.delay_human %}
+            <span class="delay {% if hop.delay_seconds < 0 %}bad{% endif %}">
+              距上一节点 {{ hop.delay_from }}：{{ hop.delay_human }}
+            </span>
+          {% else %}
+            <span class="delay na">耗时不可计算（上游或本节点缺少有效时间）</span>
+          {% endif %}
+
+          {% if hop.anomalies %}
+          <ul class="anomalies">
+            {% for a in hop.anomalies %}
+            <li class="{{ a.level }}">{{ '⛔ 错误' if a.level == 'error' else '⚠️ 告警' }}：{{ a.message }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+
+          <details>
+            <summary>查看原始 Received 字段（保留折行）</summary>
+            <pre class="raw">{{ hop.raw }}</pre>
+          </details>
+        </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endif %}
+
+  <p class="legend">
+    排序依据：<code>Received</code> 字段由最终接收服务器在顶部追加，因此解析时按其嵌套结构反转，
+    得到真实投递顺序；当某节点时间戳早于其上游时会标记时钟偏移告警。所有时间统一换算为 UTC 展示。
+  </p>
+</div>
+
+<script>
+  const taA = document.getElementById('headers_a');
+  const taB = document.getElementById('headers_b');
+  document.getElementById('fillSample').addEventListener('click', () => {
+    taA.value = {{ sample | tojson }};
+    taB.value = {{ sample_b | tojson }};
+  });
+  document.getElementById('clearInput').addEventListener('click', () => {
+    taA.value = '';
+    taB.value = '';
+    taA.focus();
+  });
+
+  const taBatch = document.getElementById('headers_batch');
+  document.getElementById('fillBatchSample').addEventListener('click', () => {
+    taBatch.value = {{ sample_batch | tojson }};
+  });
+  document.getElementById('clearBatch').addEventListener('click', () => {
+    taBatch.value = '';
+    taBatch.focus();
+  });
+
+  const taArc = document.getElementById('headers_arc');
+  document.getElementById('fillArcSample').addEventListener('click', () => {
+    taArc.value = {{ sample_arc | tojson }};
+  });
+  document.getElementById('clearArc').addEventListener('click', () => {
+    taArc.value = '';
+    taArc.focus();
+  });
+
+  const taDkim = document.getElementById('headers_dkim');
+  document.getElementById('fillDkimSample').addEventListener('click', () => {
+    taDkim.value = {{ sample_dkim | tojson }};
+  });
+  document.getElementById('clearDkim').addEventListener('click', () => {
+    taDkim.value = '';
+    taDkim.focus();
+  });
+
+  const taTrust = document.getElementById('headers_trust');
+  const taHosts = document.getElementById('trusted_hosts');
+  document.getElementById('fillTrustSample').addEventListener('click', () => {
+    taTrust.value = {{ sample_trust | tojson }};
+    taHosts.value = {{ sample_trusted_hosts | tojson }};
+  });
+  document.getElementById('clearTrust').addEventListener('click', () => {
+    taTrust.value = '';
+    taHosts.value = '';
+    taTrust.focus();
+  });
+
+  const taAuthres = document.getElementById('headers_authres');
+  const taHostsAuthres = document.getElementById('trusted_hosts_authres');
+  document.getElementById('fillAuthresSample').addEventListener('click', () => {
+    taAuthres.value = {{ sample_authres | tojson }};
+    taHostsAuthres.value = {{ sample_trusted_hosts | tojson }};
+  });
+  document.getElementById('clearAuthres').addEventListener('click', () => {
+    taAuthres.value = '';
+    taHostsAuthres.value = '';
+    taAuthres.focus();
+  });
+
+  // 单封邮件脱敏分享：POST 当前“头部 A”到 /api/analyze/share，
+  // 成功后下载 JSON 报告；失败（无 Received、超限等）以内联提示展示。
+  const btnShare = document.getElementById('downloadShare');
+  const shareStatus = document.createElement('span');
+  shareStatus.className = 'hint';
+  shareStatus.style.alignSelf = 'center';
+  btnShare.insertAdjacentElement('afterend', shareStatus);
+
+  function setShareStatus(text, bad) {
+    shareStatus.textContent = text || '';
+    shareStatus.style.color = bad ? 'var(--error)' : '';
+  }
+
+  btnShare.addEventListener('click', async () => {
+    const raw = taA.value;
+    if (!raw.trim()) {
+      setShareStatus('请先在“头部 A”粘贴邮件原始头部', true);
+      return;
+    }
+    btnShare.disabled = true;
+    setShareStatus('正在生成脱敏报告……');
+    try {
+      const resp = await fetch('/api/analyze/share', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({headers: raw}),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        setShareStatus(data.error || '脱敏报告生成失败', true);
+        return;
+      }
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'mailtrace-share-report.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setShareStatus('已下载脱敏报告（主机名/IP 已替换为 H1 / IP1 等别名）');
+    } catch (err) {
+      setShareStatus('网络错误，脱敏报告生成失败：' + err, true);
+    } finally {
+      btnShare.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
