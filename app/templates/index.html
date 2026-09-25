@@ -275,6 +275,49 @@
   }
   .handoff-card { border: 1px solid var(--accent); }
   .handoff-card strong { color: var(--accent); }
+
+  /* 发件域对齐审计 */
+  .btn-align { background: #818cf8; color: #1e1b4b; }
+  input[type="text"], input.org-input {
+    width: 100%; background: var(--panel); color: var(--text);
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 14px; font: 13px ui-monospace, SFMono-Regular,
+      Menlo, Consolas, monospace;
+  }
+  input[type="text"]:focus, input.org-input:focus {
+    outline: 2px solid var(--accent); border-color: transparent;
+  }
+  .mode-radio { display: flex; gap: 22px; flex-wrap: wrap; font-size: 13.5px; margin: 4px 0 2px; }
+  .mode-radio label { display: flex; gap: 7px; align-items: baseline; cursor: pointer; }
+  .verdict {
+    border-radius: 10px; padding: 12px 16px; margin-bottom: 18px; font-size: 15px;
+  }
+  .verdict.aligned { background: #0f2e22; border: 1px solid var(--ok); color: #a7f3d0; }
+  .verdict.not_aligned { background: #3a2f10; border: 1px solid var(--warn); color: #fde68a; }
+  .verdict.insufficient { background: #3b1d24; border: 1px solid var(--error); color: #fecdd3; }
+  table.align {
+    width: 100%; border-collapse: collapse; font-size: 13px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; overflow: hidden; margin-top: 8px;
+  }
+  table.align th, table.align td {
+    padding: 8px 12px; text-align: left; vertical-align: top;
+    border-bottom: 1px solid var(--line);
+  }
+  table.align thead th {
+    background: var(--panel-2); color: var(--muted);
+    font-size: 12.5px; white-space: nowrap;
+  }
+  table.align tbody tr:last-child td { border-bottom: 0; }
+  table.align tr.row-aligned td { border-left: 3px solid var(--ok); }
+  table.align tr.row-not_aligned td { border-left: 3px solid var(--warn); }
+  table.align tr.row-no_identity td { border-left: 3px solid var(--error); }
+  table.align tr.row-not_pass td { border-left: 3px solid var(--line); opacity: 0.8; }
+  table.align tr.row-uncomparable td { border-left: 3px solid var(--error); }
+  table.align td.pos { white-space: nowrap; }
+  table.align td.dom { word-break: break-all; font-family: ui-monospace, Menlo, monospace; }
+  .from-card { border: 1px solid var(--line); }
+  .from-card.bad { border-color: var(--error); }
 </style>
 </head>
 <body>
@@ -397,6 +440,42 @@
       <button class="btn-ghost" type="button" id="fillAuthresSample">填入示例</button>
       <button class="btn-ghost" type="button" id="clearAuthres">清空</button>
       <span class="hint" style="align-self:center;">也可调用 <code>POST /api/analyze/auth-results</code>（JSON：<code>{"headers": "...", "trusted_hosts": ["..."]}</code>）</span>
+    </div>
+  </form>
+
+  <h2 class="section-title">🧭 发件域对齐审计（单封邮件）</h2>
+  <p class="subtitle" style="margin-bottom:10px;">
+    粘贴单封邮件原始头部，填写<strong>本组织接收服务器主机名名单</strong>与
+    <strong>发件组织域</strong>。系统复用 Authentication-Results 归属结果，
+    <strong>只采纳本组织声明</strong>：取其中 <code>spf=pass</code> 的
+    <code>smtp.mailfrom</code>、<code>dkim=pass</code> 的 <code>header.d</code>
+    身份域，与头部<strong>唯一 From 地址域</strong>比较。
+    <strong>严格模式</strong>要求身份域与 From 域完全相同；<strong>宽松模式</strong>
+    要求两域均为所填组织域或其子域（按标签边界匹配）。任一可信通过声明对齐即
+    “有对齐证据”；有可用通过声明但均不对齐为“未见对齐证据”；其余为“证据不足”。
+    重复 From、缺失域不静默择一。
+  </p>
+  <form method="post" action="/sender-alignment" id="alignForm">
+    <textarea name="headers_align" id="headers_align" style="min-height:220px;"
+      placeholder="粘贴单封邮件完整原始头部（含 From、Authentication-Results 与 Received 字段）……">{{ headers_align or '' }}</textarea>
+    <label class="input-label" for="trusted_hosts_align">本组织接收服务器主机名名单（每行一个，也可用逗号 / 空格分隔）</label>
+    <textarea name="trusted_hosts_align" id="trusted_hosts_align" style="min-height:88px;"
+      placeholder="edge.internal.corp&#10;gw2.internal.corp">{{ trusted_hosts_align_text or '' }}</textarea>
+    <label class="input-label" for="org_domain">发件组织域（宽松模式必填，如 partner.example）</label>
+    <input type="text" name="org_domain" id="org_domain" class="org-input"
+      placeholder="partner.example" value="{{ org_domain_text or '' }}">
+    <label class="input-label">对齐模式</label>
+    <div class="mode-radio">
+      <label><input type="radio" name="align_mode" value="strict"
+        {% if align_mode_selected != 'relaxed' %}checked{% endif %}> 严格模式：身份域与 From 域完全相同</label>
+      <label><input type="radio" name="align_mode" value="relaxed"
+        {% if align_mode_selected == 'relaxed' %}checked{% endif %}> 宽松模式：两域均为发件组织域或其子域（标签边界）</label>
+    </div>
+    <div class="toolbar">
+      <button class="btn-align" type="submit">审计发件域对齐</button>
+      <button class="btn-ghost" type="button" id="fillAlignSample">填入示例</button>
+      <button class="btn-ghost" type="button" id="clearAlign">清空</button>
+      <span class="hint" style="align-self:center;">也可调用 <code>POST /api/analyze/sender-alignment</code>（JSON：<code>{"headers": "...", "trusted_hosts": ["..."], "org_domain": "...", "mode": "strict"}</code>）</span>
     </div>
   </form>
 
@@ -834,6 +913,119 @@
     {% endif %}
   {% endif %}
 
+  {% if align %}
+    {% if align.error %}
+      <div class="banner">{{ align.error }}</div>
+    {% else %}
+      <h2 style="font-size:18px;">发件域对齐审计结果</h2>
+      <div class="stats">
+        <div class="stat">
+          <div class="num {% if align.status == 'aligned' %}ok{% elif align.status == 'not_aligned' %}warn{% else %}error{% endif %}">{{ align.status_label }}</div>
+          <div class="label">对齐结论（{{ align.mode_label }}）</div>
+        </div>
+        <div class="stat"><div class="num">{{ align['from'].domain or '—' }}</div><div class="label">唯一 From 地址域</div></div>
+        <div class="stat"><div class="num">{{ align.usable_claim_count }}</div><div class="label">可用通过声明</div></div>
+        <div class="stat"><div class="num {% if align.aligned_count %}ok{% endif %}">{{ align.aligned_count }}</div><div class="label">对齐声明</div></div>
+      </div>
+
+      <div class="verdict {{ align.status }}">
+        {% if align.status == 'aligned' %}✅{% elif align.status == 'not_aligned' %}⚠️{% else %}🚫{% endif %}
+        <strong>{{ align.status_label }}</strong>：{{ align.message }}
+      </div>
+
+      <div class="card from-card {% if align['from'].status != 'ok' %}bad{% endif %}">
+        <h2>📬 From 地址域解析</h2>
+        <div class="hop-grid">
+          <div><span class="k">状态</span>{{ align['from'].status_label }}</div>
+          <div><span class="k">From 域</span>
+            {% if align['from'].domain %}<code>{{ align['from'].domain }}</code>{% else %}<span class="time-bad">无法确定</span>{% endif %}
+          </div>
+          <div><span class="k">From 地址</span>{{ align['from'].address or '—' }}</div>
+          <div><span class="k">From 字段</span>{{ align['from'].field_count }} 个
+            {% if align['from'].field_positions %}（位于第 {{ align['from'].field_positions | join('、') }} 个字段）{% endif %}
+          </div>
+        </div>
+        {% if align['from'].status != 'ok' %}
+        <ul class="anomalies">
+          <li class="error">⛔ {{ align['from'].detail }}——不静默择一，无法确定唯一 From 域时结论为“证据不足”。</li>
+        </ul>
+        {% endif %}
+        {% if align.mode == 'relaxed' and align.org_domain %}
+        <p class="hint" style="margin:8px 0 0;">宽松模式比较基准：发件组织域 <code>{{ align.org_domain }}</code>（From 域与身份域均须为该域或其子域，按标签边界匹配）。</p>
+        {% endif %}
+      </div>
+
+      {% if align.no_org_claims %}
+      <div class="banner">🚫 无本组织声明：
+        {%- if align.no_org_reason == 'no_trusted_prefix' %}无法建立自顶端连续可信前缀，任何 Authentication-Results 都不能归属本组织。
+        {%- elif align.no_org_reason == 'no_auth_results' %}头部中没有 Authentication-Results 字段。
+        {%- else %}所有 Authentication-Results 字段均未能归属本组织可信前缀内的接收跳。
+        {%- endif %}
+        没有可采纳的认证结果，结论为“证据不足”。
+      </div>
+      {% elif align.claims %}
+      <div class="card">
+        <h2>🔎 本组织声明逐条比较（{{ align.claim_count }} 条 spf / dkim 声明）</h2>
+        <div class="cmp-wrap">
+        <table class="align">
+          <thead>
+            <tr>
+              <th>#</th><th>方法</th><th>声明字段位置</th><th>接收跳</th>
+              <th>身份域</th><th>比较结果</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in align.claims %}
+            <tr class="row-{{ c.status }}">
+              <td class="pos">{{ c.index }}</td>
+              <td class="pos">
+                <span class="hchip {% if c.result.lower() == 'pass' %}match{% elif c.result.lower() == 'fail' %}miss{% else %}caution{% endif %}">{{ c.method }}={{ c.result or '（空）' }}</span>
+              </td>
+              <td class="pos">第 {{ c.field_index }} 条 AR<br><span class="hint">头部第 {{ c.field_position }} 个字段</span></td>
+              <td class="pos">
+                {% if c.hop_top_index %}第 {{ c.hop_top_index }} 跳<br><span class="hint">by {{ c.hop_by_host or '（缺失）' }}</span>{% else %}—{% endif %}
+              </td>
+              <td class="dom">
+                {% if c.identity_domain %}<code>{{ c.identity_domain }}</code>{% else %}<span class="time-bad">—</span>{% endif %}
+                <span class="sub hint">{{ c.identity_prop }}{% if c.identity_raw %}={{ c.identity_raw }}{% endif %}</span>
+              </td>
+              <td>
+                {% if c.status == 'aligned' %}<span class="trust-badge t-ok">✓ 对齐</span>
+                {% elif c.status == 'not_aligned' %}<span class="trust-badge t-boundary">✗ 不对齐</span>
+                {% elif c.status == 'no_identity' %}<span class="trust-badge t-reentry">⚠ 缺少身份域</span>
+                {% elif c.status == 'uncomparable' %}<span class="trust-badge t-reentry">⚠ 无法比较</span>
+                {% else %}<span class="trust-badge t-out">非 pass，不参与</span>{% endif %}
+                <span class="sub hint">{{ c.detail }}</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        </div>
+        <p class="hint" style="margin:8px 0 0;">
+          仅列出归属本组织可信前缀的 Authentication-Results 中的 spf / dkim 声明；
+          非本组织声明（越过边界 / 身份不符 / 无对应跳）不予采纳，可在上方
+          “认证结果来源”区域逐条查看归属判定。
+        </p>
+      </div>
+      {% else %}
+      <div class="banner">本组织声明中没有 spf / dkim 方法声明，没有可比较的身份域。</div>
+      {% endif %}
+
+      <p class="legend">
+        审计口径：复用 Authentication-Results 归属（仅自顶端连续可信前缀内、
+        authserv-id 与接收跳 by 主机一致的字段为<strong>本组织声明</strong>）；
+        取其中 <code>spf=pass</code> 的 <code>smtp.mailfrom</code>、
+        <code>dkim=pass</code> 的 <code>header.d</code> 身份域，与唯一 From
+        地址域比较。严格模式要求身份域与 From 域完全相同（忽略大小写与末尾点）；
+        宽松模式要求两域均为发件组织域或其子域（按标签边界匹配，
+        <code>example.com</code> 不匹配 <code>notexample.com</code>）。
+        重复 From 字段、单字段多地址、缺地址 / 缺域时不静默择一，结论为“证据不足”。
+      </p>
+      <p class="dkim-notice">{{ align.notice }}</p>
+    {% endif %}
+  {% endif %}
+
   {% if batch %}
     {% if batch.error %}
       <div class="banner">{{ batch.error }}</div>
@@ -1143,6 +1335,21 @@
     taAuthres.value = '';
     taHostsAuthres.value = '';
     taAuthres.focus();
+  });
+
+  const taAlign = document.getElementById('headers_align');
+  const taHostsAlign = document.getElementById('trusted_hosts_align');
+  const inputOrgDomain = document.getElementById('org_domain');
+  document.getElementById('fillAlignSample').addEventListener('click', () => {
+    taAlign.value = {{ sample_align | tojson }};
+    taHostsAlign.value = {{ sample_trusted_hosts | tojson }};
+    inputOrgDomain.value = {{ sample_org_domain | tojson }};
+  });
+  document.getElementById('clearAlign').addEventListener('click', () => {
+    taAlign.value = '';
+    taHostsAlign.value = '';
+    inputOrgDomain.value = '';
+    taAlign.focus();
   });
 
   // 单封邮件脱敏分享：POST 当前“头部 A”到 /api/analyze/share，

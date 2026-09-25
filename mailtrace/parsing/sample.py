@@ -282,4 +282,55 @@ Subject: Authentication-Results source demo
 Message-ID: <authres-demo@external.example>
 """
 
+# 发件域对齐审计示例（与认证结果来源示例同一条链路，可信前缀为
+# edge.internal.corp / gw2.internal.corp 两跳），发件组织域
+# partner.example，唯一 From 域 mail.partner.example：
+# - 第 1 条 AR（edge.internal.corp，归属第 1 跳）：本组织声明——
+#   spf=pass smtp.mailfrom=news@mail.partner.example 与
+#   dkim=pass header.d=mail.partner.example，严格模式即与 From 域
+#   完全相同（对齐）；另含 dkim=fail / dmarc=none（非 pass，不作证据）；
+# - 第 2 条 AR（gw2.internal.corp，归属第 2 跳）：本组织声明——
+#   spf=pass smtp.mailfrom=partner.example、dkim=pass header.d=partner.example，
+#   严格模式与 From 子域不完全相同（不对齐），宽松模式两域均为
+#   partner.example 或其子域（按标签边界匹配，对齐）；
+# - 第 3 条 AR（relay2.partner.example，越过可信边界）与第 4 条
+#   （archive.external.example，无对应跳）中的 pass 声明均不予采纳。
+# 严格 / 宽松两种模式下总体结论均为“有对齐证据”，但逐条比较结果不同。
+SAMPLE_HEADERS_ALIGN = """\
+Authentication-Results: edge.internal.corp;
+\tspf=pass smtp.mailfrom=news@mail.partner.example;
+\tdkim=pass header.d=mail.partner.example;
+\tdkim=fail header.d=attacker.example;
+\tdmarc=none header.from=mail.partner.example
+Received: from gw2.internal.corp (gw2.internal.corp [10.20.0.2])
+\tby edge.internal.corp (Postfix) with ESMTPS id A101
+\tfor <user@corp.example>; Thu, 24 Sep 2026 03:05:10 +0000
+Authentication-Results: gw2.internal.corp;
+\tspf=pass smtp.mailfrom=partner.example;
+\tdkim=pass header.d=partner.example
+Received: from gateway.partner.example (gateway.partner.example [203.0.113.55])
+\tby gw2.internal.corp (Postfix) with ESMTP id B202
+\tfor <user@corp.example>; Thu, 24 Sep 2026 03:04:30 +0000
+Authentication-Results: relay2.partner.example;
+\tspf=pass smtp.mailfrom=spoof.example;
+\tdkim=pass header.d=spoof.example
+Received: from relay1.external.example (relay1.external.example [198.51.100.20])
+\tby relay2.partner.example (Postfix) with ESMTP id C303
+\tfor <user@corp.example>; Thu, 24 Sep 2026 03:03:50 +0000
+Received: from sender.external.example (sender.external.example [192.0.2.90])
+\tby edge.external.example (Postfix) with ESMTP id E505
+\tfor <user@corp.example>; Thu, 24 Sep 2026 03:02:10 +0000
+Authentication-Results: archive.external.example;
+\tspf=pass smtp.mailfrom=spoof.example
+Date: Thu, 24 Sep 2026 03:02:00 +0000
+From: Partner Newsletter <news@mail.partner.example>
+To: User <user@corp.example>
+Subject: Sender alignment demo
+Message-ID: <align-demo@mail.partner.example>
+"""
+
+# 发件域对齐示例的发件组织域（宽松模式使用）
+SAMPLE_ORG_DOMAIN = "partner.example"
+
+
 
